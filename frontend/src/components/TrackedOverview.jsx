@@ -1,5 +1,7 @@
 export default function TrackedOverview({ trackedProducts, overviewMap, onSelect }) {
-  if (trackedProducts.length === 0) return null;
+  if (trackedProducts.length === 0) {
+    return <p className="status-text">No tracked products yet.</p>;
+  }
 
   return (
     <div className="overview-grid">

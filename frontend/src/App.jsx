@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import SearchBar from './components/SearchBar';
 import SearchResults from './components/SearchResults';
-import TrackedProducts from './components/TrackedProducts';
 import TrackedOverview from './components/TrackedOverview';
 import ProductDetails from './components/ProductDetails';
 import PriceHistory from './components/PriceHistory';
@@ -44,8 +43,6 @@ export default function App() {
     try {
       const results = await getTrackedProducts();
       setTrackedProducts(results);
-      // Bonus overview data uses the same existing history endpoint -
-      // no new backend route, just reading what already exists per product.
       loadOverviewData(results);
     } catch (err) {
       setError(`Backend unavailable: ${err.message}`);
@@ -155,8 +152,6 @@ export default function App() {
       setError(`Scrape failed: ${err.message}`);
     }
 
-    // Reload history/logs regardless of success or failure - a failed
-    // attempt should still show up honestly in the logs table.
     try {
       const [historyData, logsData] = await Promise.all([
         getHistory(selectedProduct.id),
@@ -201,17 +196,15 @@ export default function App() {
 
         <section className="panel">
           <h2>Tracked Products</h2>
-          <TrackedOverview
-            trackedProducts={trackedProducts}
-            overviewMap={overviewMap}
-            onSelect={handleSelectProduct}
-          />
-          <TrackedProducts
-            trackedProducts={trackedProducts}
-            loading={trackedLoading}
-            selectedId={selectedProduct?.id}
-            onSelect={handleSelectProduct}
-          />
+          {trackedLoading ? (
+            <p className="status-text">Loading tracked products...</p>
+          ) : (
+            <TrackedOverview
+              trackedProducts={trackedProducts}
+              overviewMap={overviewMap}
+              onSelect={handleSelectProduct}
+            />
+          )}
         </section>
 
         {selectedProduct && (
