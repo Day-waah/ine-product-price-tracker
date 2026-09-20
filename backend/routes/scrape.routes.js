@@ -129,8 +129,57 @@ async function scrapeOneTrackedProduct(browser, trackedProduct) {
   }
 }
 
+// This is the actual background worker. It only ever receives plain data
+// (the list of active products already fetched from Supabase) - never req
+// or res - because by the time this runs, the HTTP response for the
+// triggering request has already been sent and that request/response cycle
+// is finished. Nothing here should ever touch res.
+async function runBatchScrapeInBackground(activeProducts) {
+  console.log('[scrape-all] Background batch scrape started.');
+
+  let browser = null;
+  const results = [];
+
+  try {
+    browser = await chromium.launch({
+      headless: true,
+    });
+
+    // Sequential scraping keeps the process predictable
+    // and avoids hitting the mock store with many browsers at once.
+    for (const trackedProduct of activeProducts) {
+      const result = await scrapeOneTrackedProduct(browser, trackedProduct);
+      results.push(result);
+    }
+  } catch (err) {
+    // Catches anything unexpected outside the per-product try/catch above
+    // (e.g. the browser itself failing to launch), so this never becomes
+    // an unhandled promise rejection - nothing awaits this function.
+    console.error(
+      '[scrape-all] Background batch scrape crashed unexpectedly:',
+      err.message
+    );
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
+  }
+
+  const succeeded = results.filter(
+    (result) => result.status === 'success'
+  ).length;
+
+  const failed = results.filter(
+    (result) => result.status === 'failed'
+  ).length;
+
+  console.log(
+    `[scrape-all] Background batch scrape finished. Processed: ${results.length}, Succeeded: ${succeeded}, Failed: ${failed}.`
+  );
+}
+
 // ============================================================
-// Scheduled / batch scrape route
+// Scheduled / batch scrape route (trigger only)
 // IMPORTANT: This must come BEFORE /:trackedProductId
 // ============================================================
 
@@ -139,8 +188,6 @@ router.post('/scrape-all', async (req, res) => {
   if (!checkCronSecret(req, res)) {
     return;
   }
-
-  console.log('[scrape-all] Batch scrape started.');
 
   const { data: activeProducts, error: fetchError } = await supabase
     .from('tracked_products')
@@ -165,61 +212,27 @@ router.post('/scrape-all', async (req, res) => {
     );
 
     return res.status(200).json({
-      success: true,
+      accepted: true,
+      message: 'No active tracked products.',
       processed: 0,
-      succeeded: 0,
-      failed: 0,
-      results: [],
     });
   }
 
-  let browser = null;
-  const results = [];
+  // Fire-and-forget: intentionally NOT awaited. Errors inside are caught
+  // within runBatchScrapeInBackground itself, so this never produces an
+  // unhandled promise rejection even though the response below is sent
+  // before this finishes.
+  runBatchScrapeInBackground(activeProducts);
 
-  try {
-    browser = await chromium.launch({
-      headless: true,
-    });
-
-    // Sequential scraping keeps the process predictable
-    // and avoids hitting the mock store with many browsers at once.
-    for (const trackedProduct of activeProducts) {
-      const result = await scrapeOneTrackedProduct(
-        browser,
-        trackedProduct
-      );
-
-      results.push(result);
-    }
-  } finally {
-    if (browser) {
-      await browser.close();
-    }
-  }
-
-  const succeeded = results.filter(
-    (result) => result.status === 'success'
-  ).length;
-
-  const failed = results.filter(
-    (result) => result.status === 'failed'
-  ).length;
-
-  console.log(
-    `[scrape-all] Batch scrape finished. Processed: ${results.length}, Succeeded: ${succeeded}, Failed: ${failed}.`
-  );
-
-  return res.status(200).json({
-    success: true,
-    processed: results.length,
-    succeeded,
-    failed,
-    results,
+  return res.status(202).json({
+    accepted: true,
+    message: 'Batch scrape started',
+    processed: activeProducts.length,
   });
 });
 
 // ============================================================
-// Existing manual scrape route
+// Existing manual scrape route (unchanged)
 // ============================================================
 
 // POST /api/scrape/:trackedProductId
