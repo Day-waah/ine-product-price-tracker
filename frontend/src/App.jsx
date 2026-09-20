@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import SearchBar from './components/SearchBar';
 import SearchResults from './components/SearchResults';
 import TrackedProducts from './components/TrackedProducts';
+import TrackedOverview from './components/TrackedOverview';
 import ProductDetails from './components/ProductDetails';
 import PriceHistory from './components/PriceHistory';
 import ScrapeLogs from './components/ScrapeLogs';
@@ -22,6 +23,7 @@ export default function App() {
 
   const [trackedProducts, setTrackedProducts] = useState([]);
   const [trackedLoading, setTrackedLoading] = useState(false);
+  const [overviewMap, setOverviewMap] = useState({});
 
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -42,11 +44,45 @@ export default function App() {
     try {
       const results = await getTrackedProducts();
       setTrackedProducts(results);
+      // Bonus overview data uses the same existing history endpoint -
+      // no new backend route, just reading what already exists per product.
+      loadOverviewData(results);
     } catch (err) {
       setError(`Backend unavailable: ${err.message}`);
     } finally {
       setTrackedLoading(false);
     }
+  }
+
+  async function loadOverviewData(products) {
+    if (!products || products.length === 0) {
+      setOverviewMap({});
+      return;
+    }
+
+    const settled = await Promise.allSettled(
+      products.map(async (product) => {
+        const productHistory = await getHistory(product.id);
+        const latest = productHistory.length > 0 ? productHistory[productHistory.length - 1] : null;
+        return {
+          id: product.id,
+          price: latest ? latest.price : null,
+          stock: latest ? latest.stock : null,
+        };
+      })
+    );
+
+    const map = {};
+    settled.forEach((result, idx) => {
+      const productId = products[idx].id;
+      if (result.status === 'fulfilled') {
+        map[result.value.id] = { price: result.value.price, stock: result.value.stock };
+      } else {
+        map[productId] = { price: null, stock: null };
+      }
+    });
+
+    setOverviewMap(map);
   }
 
   const trackedProductIds = useMemo(
@@ -128,6 +164,7 @@ export default function App() {
       ]);
       setHistory(historyData);
       setLogs(logsData);
+      loadOverviewData(trackedProducts);
     } catch (reloadErr) {
       console.error('Failed to reload history/logs after scrape:', reloadErr.message);
     }
@@ -150,7 +187,7 @@ export default function App() {
         {message && <div className="banner success">{message}</div>}
         {error && <div className="banner error">{error}</div>}
 
-        <section>
+        <section className="panel">
           <h2>Search</h2>
           <SearchBar onSearch={handleSearch} loading={searchLoading} />
           <SearchResults
@@ -162,8 +199,13 @@ export default function App() {
           />
         </section>
 
-        <section>
+        <section className="panel">
           <h2>Tracked Products</h2>
+          <TrackedOverview
+            trackedProducts={trackedProducts}
+            overviewMap={overviewMap}
+            onSelect={handleSelectProduct}
+          />
           <TrackedProducts
             trackedProducts={trackedProducts}
             loading={trackedLoading}
