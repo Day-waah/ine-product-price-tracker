@@ -368,3 +368,33 @@ tbody tr:hover {
     padding: 8px;
   }
 }
+.chart-wrapper {
+  margin-bottom: 18px;
+}
+
+.price-chart-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.chart-gridline {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.chart-axis-label {
+  font-size: 10px;
+  fill: var(--text-muted);
+}
+
+.chart-line {
+  stroke: var(--blue-700);
+  stroke-width: 2.5;
+}
+
+.chart-point {
+  fill: var(--blue-700);
+  stroke: white;
+  stroke-width: 1.5;
+}
